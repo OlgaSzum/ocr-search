@@ -17,9 +17,10 @@
 	•	Mechanizm ten służy do identyfikowania podobieństw wizualnych między obrazami.
 
 ### Szyldy i znaki graficzne
-	•	Szyldy traktowane są jako rozpoznawalne ikony wizualne, a nie problemy tekstowe.
-	•	Podstawową metodą jest wyszukiwanie podobieństwa obrazów, natomiast OCR pełni funkcję pomocniczą.
+	•	Szyldy mogą mieć zarówno formę prostych napisów, jak i bardziej złożonych form wizualnych.
+	•	W zależności od charakteru materiału wyszukiwanie może opierać się na OCR (dla szyldów czytelnych tekstowo) oraz na podobieństwie wizualnym (dla form graficznych).
 
 ### Ograniczenia
 	•	Na etapie początkowym nie przewiduje się automatycznego uczenia modeli.
 	•	Trening pełnych modeli możliwy jest dopiero po zgromadzeniu danych oraz uzyskaniu uzasadnienia jakościowego.
+
