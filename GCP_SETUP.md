@@ -26,7 +26,6 @@ Aktywny billing jest wymagany do korzystania z Cloud Vision API, również w prz
 
 ## 5. Limity i koszty
 - Cloud Vision API: ~1000 obrazów OCR / miesiąc (free tier).
-- Zalecane alerty budżetowe z niskim progiem.
 
 ## Podsumowanie
 Projekt GCP z billingiem, Cloud Vision API, Cloud Storage (opcjonalnie Cloud Run) w regionie europe-west4.
