@@ -20,8 +20,8 @@ Ustawienia:
 	•	Access control: Uniform  
 	•	Public access prevention: Enabled  
 	•	Data protection:  
-	•	Object versioning: OFF  
-	•	Retention policy: OFF (jeśli brak wymagań formalnych)  
+	- Object versioning: OFF  
+	- Retention policy: OFF (jeśli brak wymagań formalnych)  
 	•	Encryption: Google-managed encryption key (domyślne)  
 
 Wymóg:  
@@ -68,10 +68,10 @@ Wymóg:
 - Użytkownicy końcowi (bez dostępu do konsoli GCP).
 
 ## 5. Limity i koszty
-Cloud Vision API:
-	•	Free tier: ok. 1000 obrazów OCR / miesiąc.
-Zalecane:
-	•	ustawienie budget alerts na niskim progu (np. 1–5 USD).
+Cloud Vision API:  
+	•	Free tier: ok. 1000 obrazów OCR / miesiąc.  
+Zalecane:  
+	•	ustawienie budget alerts na niskim progu (np. 1–5 USD).  
   
 ## Podsumowanie  
 Minimalna konfiguracja obejmuje:  
