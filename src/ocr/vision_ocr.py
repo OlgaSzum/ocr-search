@@ -26,6 +26,9 @@ source        : str        # zawsze "gcv_ocr"
 """
 
 from typing import List, Dict, Optional
+from google.cloud import vision
+import os
+import hashlib
 
 
 def detect_script_from_text(text: str) -> str:
@@ -74,36 +77,83 @@ def detect_script_from_text(text: str) -> str:
 
     return "unknown"
 
+def _stable_file_id(gcs_uri: str) -> str:
+    """
+    Generuje stabilny identyfikator pliku na podstawie gcs_uri.
+    """
+    return hashlib.sha256(gcs_uri.encode("utf-8")).hexdigest()
 
 def run_ocr(
     gcs_uri: str,
     *,
     file_id: Optional[str] = None,
     detect_script: bool = True,
+    ocr_language_hint: str = "pl",
 ) -> List[Dict]:
     """
     Wykonuje OCR na pojedynczym obrazie z Google Cloud Storage.
-
-    Parametry:
-    ----------
-    gcs_uri : str
-        Pełna ścieżka do obrazu, np. 'gs://bucket/path/image.jpg'
-
-    file_id : Optional[str]
-        Stabilny identyfikator obrazu. Jeśli None, będzie generowany
-        deterministycznie w kolejnym etapie implementacji.
-
-    detect_script : bool
-        Czy wykrywać pismo (latin / cyrillic / hebrew) na podstawie Unicode.
-
-    Zwraca:
-    -------
-    List[Dict]
-        Lista rekordów zgodnych z kontraktem CSV.
-
-    Na tym etapie:
-    - funkcja nie wywołuje jeszcze Google Vision API
-    - zwraca pustą listę
     """
-    # TODO: implementacja OCR (Google Vision API)
-    return []
+    client = vision.ImageAnnotatorClient()
+
+    image = vision.Image(source=vision.ImageSource(image_uri=gcs_uri))
+
+    response = client.text_detection(
+        image=image,
+        image_context=vision.ImageContext(
+            language_hints=[ocr_language_hint]
+        ),
+    )
+
+    if response.error.message:
+        raise RuntimeError(response.error.message)
+
+    annotations = response.text_annotations
+    if not annotations:
+        return []
+
+    if file_id is None:
+        file_id = _stable_file_id(gcs_uri)
+
+    file_name = os.path.basename(gcs_uri)
+
+    records: List[Dict] = []
+
+    # annotations[0] = cały tekst; pomijamy
+    for idx, ann in enumerate(annotations[1:], start=0):
+        text = ann.description.strip()
+        if not text:
+            continue
+
+        vertices = ann.bounding_poly.vertices
+        if len(vertices) < 4:
+            continue
+
+        xs = [v.x for v in vertices if v.x is not None]
+        ys = [v.y for v in vertices if v.y is not None]
+        if not xs or not ys:
+            continue
+
+        # Normalizacja bbox do [0–1] NIE jest tu robiona (brak width/height).
+        # Na tym etapie zapisujemy surowe wartości pikselowe jako string.
+        bbox_norm = f"{min(xs)},{min(ys)},{max(xs)},{max(ys)}"
+
+        script = None
+        if detect_script:
+            script = detect_script_from_text(text)
+
+        record = {
+            "file_id": file_id,
+            "file_name": file_name,
+            "gcs_path": gcs_uri,
+            "page": 1,
+            "block_id": idx,
+            "text": text,
+            "bbox_norm": bbox_norm,
+            "confidence": None,
+            "script": script,
+            "source": "gcv_ocr",
+        }
+
+        records.append(record)
+
+    return records
