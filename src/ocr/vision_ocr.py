@@ -28,6 +28,53 @@ source        : str        # zawsze "gcv_ocr"
 from typing import List, Dict, Optional
 
 
+def detect_script_from_text(text: str) -> str:
+    """
+    Wykrywa pismo (script) na podstawie zakresów Unicode.
+
+    Zwraca jedną z wartości:
+    - 'latin'
+    - 'cyrillic'
+    - 'hebrew'
+    - 'mixed'
+    - 'unknown'
+    """
+    if not text:
+        return "unknown"
+
+    has_latin = False
+    has_cyrillic = False
+    has_hebrew = False
+
+    for ch in text:
+        code = ord(ch)
+
+        # Hebrew: U+0590–U+05FF
+        if 0x0590 <= code <= 0x05FF:
+            has_hebrew = True
+
+        # Cyrillic: U+0400–U+04FF
+        elif 0x0400 <= code <= 0x04FF:
+            has_cyrillic = True
+
+        # Latin (basic + extended): U+0041–U+024F
+        elif 0x0041 <= code <= 0x024F:
+            has_latin = True
+
+    count = sum([has_latin, has_cyrillic, has_hebrew])
+
+    if count > 1:
+        return "mixed"
+    if has_hebrew:
+        return "hebrew"
+    if has_cyrillic:
+        return "cyrillic"
+    if has_latin:
+        return "latin"
+
+    return "unknown"
+
+
 def run_ocr(
     gcs_uri: str,
     *,
@@ -52,7 +99,7 @@ def run_ocr(
     Zwraca:
     -------
     List[Dict]
-        Lista rekordów zgodnych z kontraktem CSV (patrz docstring modułu).
+        Lista rekordów zgodnych z kontraktem CSV.
 
     Na tym etapie:
     - funkcja nie wywołuje jeszcze Google Vision API
