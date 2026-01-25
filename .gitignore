@@ -10,3 +10,14 @@ __pycache__/
 
 # venv
 .venv/
+
+# env / secrets
+.env
+.env.*
+
+# jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# local configs (jeśli masz)
+*.local.yaml
