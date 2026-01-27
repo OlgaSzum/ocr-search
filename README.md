@@ -12,3 +12,12 @@ Szczególnym przypadkiem są szyldy i znaki graficzne, które mogą mieć zarów
 System ma charakter etapowy. Na etapie początkowym stosowane są lekkie i tanie obliczeniowo metody (embeddingi i wyszukiwanie podobieństwa). Trening pełnych modeli rozpoznawania przewidziany jest wyłącznie na późniejszy etap, po zgromadzeniu danych oraz uzyskaniu uzasadnienia jakościowego.
 
 Wyniki generowane przez system mają charakter propozycji i wymagają każdorazowej weryfikacji przez użytkownika.
+
+## Środowiska i kernele Jupyter
+
+Repo używa dwóch niezależnych środowisk (venv) oraz dwóch kernelów Jupyter:
+
+- **OCR**: `.venv` → kernel **Python (ocr-search)**
+- **CLIP / embeddingi**: `.venv-clip` → kernel **Python (clip-search)**
+
+Notebooki OCR powinny być uruchamiane na kernelu `ocr-search`, a notebooki CLIP na kernelu `clip-search`.
