@@ -1,12 +1,14 @@
 """
     OCR z cache dla obrazów w Google Cloud Storage.
 
-    Funkcja główna: run_ocr_cache()
+    run_ocr_cache():
+    - listuje obrazy w GCS (stan "teraz"),
+    - wczytuje out_csv jako cache,
+    - uruchamia OCR tylko dla brakujących plików,
+    - dopisuje wyniki, deduplikuje,
+    - zapisuje out_csv i zwraca df_out.
 
-    gcs_photos_prefix – prefix w GCS, np. "gs://ocr-2026/photos"
-    out_csv          – ścieżka cache CSV w repo, np. "outputs/csv/ocr_lines.csv"
-    limit_images     – limit testowy (None = wszystkie)
-    image_exts       – dozwolone rozszerzenia obrazów
+    Uwaga: dla obrazów (nie PDF) nie zapisujemy kolumny `page`.
 """
 
 from __future__ import annotations
@@ -29,12 +31,7 @@ def file_id_from_gcs_path(gs_path: str) -> str:
 
 
 def list_gcs_images(prefix: str, image_exts: tuple[str, ...] = DEFAULT_IMAGE_EXTS) -> list[str]:
-    """
-    Listuje obrazy pod prefix/** w GCS przez CLI (gcloud storage ls).
-
-    prefix     – np. "gs://ocr-2026/photos"
-    image_exts – rozszerzenia obrazów
-    """
+    """Listuje obrazy pod prefix/** w GCS przez CLI (gcloud storage ls)."""
     r = subprocess.run(
         ["gcloud", "storage", "ls", f"{prefix.rstrip('/')}/**"],
         capture_output=True,
@@ -57,13 +54,13 @@ def list_gcs_images(prefix: str, image_exts: tuple[str, ...] = DEFAULT_IMAGE_EXT
 def ocr_lines_from_gcs(
     gs_path: str,
     client: vision.ImageAnnotatorClient,
-    script: str = "latin",
     source: str = "gcv_ocr_line",
 ) -> list[dict]:
     """
     Uruchamia Google Vision OCR (document_text_detection) i zwraca linie tekstu.
 
-    gs_path – pełny URI gs://...
+    Zwracane pola: text, file_name, file_id, gcs_path, line_id, bbox_norm, source
+    (bez `page`).
     """
     image = vision.Image(source=vision.ImageSource(gcs_image_uri=gs_path))
     resp = client.document_text_detection(image=image)
@@ -78,11 +75,13 @@ def ocr_lines_from_gcs(
     if (not fta) or (not fta.pages):
         return out
 
-    for page_idx, page in enumerate(fta.pages, start=1):
+    # Dla obrazów traktujemy wynik jako jeden "ciąg linii" (bez numerowania stron)
+    line_id = 0
+
+    for page in fta.pages:
         line_text: list[str] = []
-        xs: list[float] = []
-        ys: list[float] = []
-        line_id = 0
+        xs: list[int] = []
+        ys: list[int] = []
 
         def flush_line():
             nonlocal line_id, line_text, xs, ys
@@ -95,10 +94,8 @@ def ocr_lines_from_gcs(
                         "file_name": file_name,
                         "file_id": fid,
                         "gcs_path": gs_path,
-                        "page": page_idx,
                         "line_id": line_id,
                         "bbox_norm": f"{float(x1)},{float(y1)},{float(x2)},{float(y2)}",
-                        "script": script,
                         "source": source,
                     }
                 )
@@ -150,46 +147,83 @@ def run_ocr_cache(
     - zapisuje out_csv,
     - zwraca df_out.
 
-    limit_images – tylko do testów (koszty OCR per obraz).
+    Uwaga (legacy): starsze cache mogły zawierać kolumny z poprzednich iteracji (np. 'page', 'script').
+    W tym workflow dla obrazów ich nie utrzymujemy.
     """
     client = vision.ImageAnnotatorClient()
 
+    # kolumny, których nie chcemy w tym workflow (obrazy, bez PDF/page, bez script)
+    DROP_LEGACY_COLS = ("page", "script")
+
+    # 1) lista plików w GCS
     gcs_files_all = list_gcs_images(gcs_photos_prefix, image_exts=image_exts)
     if limit_images is not None:
         gcs_files_all = gcs_files_all[: int(limit_images)]
 
+    # 2) wczytaj cache
     df_cache = pd.read_csv(out_csv) if os.path.exists(out_csv) else pd.DataFrame()
+
+    # usuń legacy kolumny z cache (w pamięci)
+    if len(df_cache):
+        cols_to_drop = [c for c in DROP_LEGACY_COLS if c in df_cache.columns]
+        if cols_to_drop:
+            df_cache = df_cache.drop(columns=cols_to_drop)
+
     cached_paths = (
         set(df_cache["gcs_path"].dropna().astype(str).unique().tolist())
         if "gcs_path" in df_cache.columns
         else set()
     )
 
+    # 3) brakujące
     gcs_files_missing = [p for p in gcs_files_all if p not in cached_paths]
 
     print("GCS files:", len(gcs_files_all))
     print("Cached OCR files:", len(cached_paths))
     print("Missing (to OCR now):", len(gcs_files_missing))
 
+    # 4) OCR tylko brakujących + zapis cache
     if len(gcs_files_missing) == 0:
         print("[SKIP] Brak nowych plików – OCR nie został uruchomiony (0 kosztów).")
         df_out = df_cache.copy()
+
+        # KLUCZOWE: zapisz „oczyszczony” cache także w tym wariancie,
+        # żeby stary CSV z kolumną 'page' zniknął z dysku
+        out_dir = os.path.dirname(out_csv)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        df_out.to_csv(out_csv, index=False, encoding="utf-8")
+        print("[DONE] Cache odświeżony (bez legacy kolumn):", out_csv)
+
     else:
         rows_new: list[dict] = []
         for i, gs_path in enumerate(gcs_files_missing, start=1):
             fn = gs_path.split("/")[-1]
             try:
-                rows = ocr_lines_from_gcs(gs_path, client=client)
+                rows = ocr_lines_from_gcs(gs_path, client=client)  # bez 'page' i bez 'script'
                 rows_new.extend(rows)
                 print(f"[{i}/{len(gcs_files_missing)}] OK: {fn} -> {len(rows)} linii")
             except Exception as e:
                 print(f"[{i}/{len(gcs_files_missing)}] ERROR: {fn}: {e}")
 
         df_new = pd.DataFrame(rows_new)
+
+        # defensywnie: jeśli skądkolwiek przyszły legacy kolumny -> usuń
+        if len(df_new):
+            cols_to_drop = [c for c in DROP_LEGACY_COLS if c in df_new.columns]
+            if cols_to_drop:
+                df_new = df_new.drop(columns=cols_to_drop)
+
         df_out = pd.concat([df_cache, df_new], ignore_index=True) if len(df_cache) else df_new
 
+        # defensywnie: usuń legacy po concat
+        if len(df_out):
+            cols_to_drop = [c for c in DROP_LEGACY_COLS if c in df_out.columns]
+            if cols_to_drop:
+                df_out = df_out.drop(columns=cols_to_drop)
+
         if len(df_out) > 0:
-            key_cols = [c for c in ["gcs_path", "page", "line_id", "text"] if c in df_out.columns]
+            key_cols = [c for c in ["gcs_path", "line_id", "text"] if c in df_out.columns]
             if key_cols:
                 df_out = df_out.drop_duplicates(subset=key_cols, keep="first")
 
@@ -201,5 +235,8 @@ def run_ocr_cache(
         print("[DONE] Cache zaktualizowany:", out_csv)
 
     print("CSV rows:", len(df_out))
-    print("CSV unique files:", df_out["file_name"].nunique() if "file_name" in df_out.columns and len(df_out) else 0)
+    print(
+        "CSV unique files:",
+        df_out["file_name"].nunique() if "file_name" in df_out.columns and len(df_out) else 0,
+    )
     return df_out
