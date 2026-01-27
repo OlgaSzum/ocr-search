@@ -18,3 +18,7 @@ __pycache__/
 notebooks/.ipynb_checkpoints/
 
 **/.ipynb_checkpoints/
+
+# virtualenvs
+.venv/
+.venv-clip/
