@@ -78,10 +78,8 @@ def words_to_lines(
                 "file_name": base["file_name"],
                 "file_id": base["file_id"],
                 "gcs_path": base["gcs_path"],
-                "page": base["page"],
                 "line_id": line_idx,
                 "bbox_norm": line_bbox,
-                "script": base.get("script"),
                 "source": "gcv_ocr_line",
             }
             line_records.append(rec)
